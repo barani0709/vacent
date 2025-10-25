@@ -2,6 +2,8 @@
 
 import { DataTable } from "primereact/datatable";
 import { Column } from "primereact/column";
+import { Button } from "primereact/button";
+import * as XLSX from "xlsx";
 import { EmployeeRow } from "../utils/dbActions";
 
 export default function HQSummary({
@@ -15,6 +17,13 @@ export default function HQSummary({
   const hqs = [...new Set(data.map(d => d.hq))].filter(Boolean);
   const totalEmployees = data.length;
   const totalVacant = data.filter(d => d.vacancy && d.vacancy.trim() !== "").length;
+
+  const exportToExcel = () => {
+    const ws = XLSX.utils.json_to_sheet(data);
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, "HQ-wise Data");
+    XLSX.writeFile(wb, `HQ-wise-${new Date().toISOString().split('T')[0]}.xlsx`);
+  };
 
   return (
     <div className="space-y-5">
@@ -36,9 +45,18 @@ export default function HQSummary({
 
       {/* HQ-wise Table - Clean Modern Design */}
       <div className="bg-white border border-gray-200 rounded-lg overflow-hidden">
-        <div className="px-6 py-4 border-b border-gray-200 bg-gray-50">
-          <h2 className="text-lg font-semibold text-gray-900">HQ-wise View</h2>
-          <p className="text-sm text-gray-500 mt-1">Employees grouped by headquarters</p>
+        <div className="px-6 py-4 border-b border-gray-200 bg-gray-50 flex justify-between items-center">
+          <div>
+            <h2 className="text-lg font-semibold text-gray-900">HQ-wise View</h2>
+            <p className="text-sm text-gray-500 mt-1">Employees grouped by headquarters</p>
+          </div>
+          <Button
+            label="Download Excel"
+            icon="pi pi-download"
+            onClick={exportToExcel}
+            size="small"
+            outlined
+          />
         </div>
         <div className="p-6">
           <DataTable

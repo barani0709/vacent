@@ -6,8 +6,9 @@ import { Column, ColumnEditorOptions } from "primereact/column";
 import { Button } from "primereact/button";
 import { InputText } from "primereact/inputtext";
 import { Dialog } from "primereact/dialog";
+import { toast } from "react-toastify";
 import * as XLSX from "xlsx";
-import { addEmployee, deleteEmployee, updateEmployee } from "../utils/dbActions";
+import { addEmployee, deleteEmployee, updateEmployee, checkEmployeeExists } from "../utils/dbActions";
 
 type Row = {
   id: number;
@@ -44,6 +45,35 @@ export default function EmployeeTable({
     remarks: ""
   });
 
+  // Calculate vacancy period from resignation date
+  const calculateVacancyPeriod = (resignedDate: string): string => {
+    if (!resignedDate) return "";
+    
+    const resigned = new Date(resignedDate);
+    const today = new Date();
+    
+    if (isNaN(resigned.getTime()) || resigned > today) return "";
+    
+    let years = today.getFullYear() - resigned.getFullYear();
+    let months = today.getMonth() - resigned.getMonth();
+    let days = today.getDate() - resigned.getDate();
+    
+    // Adjust for negative days
+    if (days < 0) {
+      months--;
+      const lastMonth = new Date(today.getFullYear(), today.getMonth(), 0);
+      days += lastMonth.getDate();
+    }
+    
+    // Adjust for negative months
+    if (months < 0) {
+      years--;
+      months += 12;
+    }
+    
+    return `${years} years, ${months} months, ${days} days`;
+  };
+
   const exportExcel = () => {
     const ws = XLSX.utils.json_to_sheet(rows);
     const wb = XLSX.utils.book_new();
@@ -67,12 +97,31 @@ export default function EmployeeTable({
 
   const handleAddEmployee = async () => {
     if (!newEmployee.name || !newEmployee.division || !newEmployee.hq) {
-      alert("Please fill in Name, Division, and HQ fields");
+      toast.error("Please fill in Name, Division, and HQ fields");
       return;
     }
-    const addedRow = await addEmployee(newEmployee);
-    onChangeRows([addedRow as any, ...rows]);
-    setShowAddDialog(false);
+
+    // Check if employee code already exists
+    if (newEmployee.emp_code && newEmployee.emp_code.trim() !== "") {
+      const exists = await checkEmployeeExists(newEmployee.emp_code);
+      if (exists) {
+        toast.error(`Employee with code "${newEmployee.emp_code}" already exists!`);
+        return;
+      }
+    }
+
+    try {
+      const addedRow = await addEmployee(newEmployee);
+      onChangeRows([addedRow as any, ...rows]);
+      setShowAddDialog(false);
+      toast.success("Employee added successfully!");
+    } catch (error: any) {
+      if (error.message?.includes("duplicate key") || error.message?.includes("unique constraint")) {
+        toast.error("Employee code already exists!");
+      } else {
+        toast.error("Failed to add employee. Please try again.");
+      }
+    }
   };
 
   const onEdit = (row: Row) => {
@@ -84,28 +133,54 @@ export default function EmployeeTable({
     if (!editingEmployee) return;
     
     if (!editingEmployee.name || !editingEmployee.division || !editingEmployee.hq) {
-      alert("Please fill in Name, Division, and HQ fields");
+      toast.error("Please fill in Name, Division, and HQ fields");
       return;
     }
 
-    // Update each field
-    for (const field of Object.keys(editingEmployee)) {
-      if (field !== 'id') {
-        await updateEmployee(editingEmployee.id, field, editingEmployee[field as keyof Row]);
+    // Check if employee code changed and if new code already exists
+    const originalEmployee = rows.find(r => r.id === editingEmployee.id);
+    if (editingEmployee.emp_code && 
+        editingEmployee.emp_code.trim() !== "" && 
+        editingEmployee.emp_code !== originalEmployee?.emp_code) {
+      const exists = await checkEmployeeExists(editingEmployee.emp_code);
+      if (exists) {
+        toast.error(`Employee with code "${editingEmployee.emp_code}" already exists!`);
+        return;
       }
     }
-    
-    // Update local state
-    const updatedRows = rows.map(r => r.id === editingEmployee.id ? editingEmployee : r);
-    onChangeRows(updatedRows);
-    setShowEditDialog(false);
-    setEditingEmployee(null);
+
+    try {
+      // Update each field
+      for (const field of Object.keys(editingEmployee)) {
+        if (field !== 'id') {
+          await updateEmployee(editingEmployee.id, field, editingEmployee[field as keyof Row]);
+        }
+      }
+      
+      // Update local state
+      const updatedRows = rows.map(r => r.id === editingEmployee.id ? editingEmployee : r);
+      onChangeRows(updatedRows);
+      setShowEditDialog(false);
+      setEditingEmployee(null);
+      toast.success("Employee updated successfully!");
+    } catch (error: any) {
+      if (error.message?.includes("duplicate key") || error.message?.includes("unique constraint")) {
+        toast.error("Employee code already exists!");
+      } else {
+        toast.error("Failed to update employee. Please try again.");
+      }
+    }
   };
 
   const onDelete = async (row: Row) => {
     if (confirm(`Delete employee ${row.name}?`)) {
-      await deleteEmployee(row.id);
-      onChangeRows(rows.filter((r) => r.id !== row.id));
+      try {
+        await deleteEmployee(row.id);
+        onChangeRows(rows.filter((r) => r.id !== row.id));
+        toast.success("Employee deleted successfully!");
+      } catch (error) {
+        toast.error("Failed to delete employee. Please try again.");
+      }
     }
   };
 
@@ -229,7 +304,15 @@ export default function EmployeeTable({
                 <InputText
                   type="date"
                   value={editingEmployee.resigned_date || ""}
-                  onChange={(e) => setEditingEmployee({ ...editingEmployee, resigned_date: e.target.value })}
+                  onChange={(e) => {
+                    const newDate = e.target.value;
+                    const calculatedPeriod = calculateVacancyPeriod(newDate);
+                    setEditingEmployee({ 
+                      ...editingEmployee, 
+                      resigned_date: newDate,
+                      vacancy: calculatedPeriod
+                    });
+                  }}
                   className="w-full"
                 />
               </div>
@@ -237,12 +320,14 @@ export default function EmployeeTable({
 
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-2">
-                Vacancy Period
+                Vacancy Period <span className="text-gray-400 text-xs">(Auto-calculated)</span>
               </label>
               <InputText
                 value={editingEmployee.vacancy}
                 onChange={(e) => setEditingEmployee({ ...editingEmployee, vacancy: e.target.value })}
-                className="w-full"
+                className="w-full bg-gray-50"
+                placeholder="Will be calculated from resigned date"
+                readOnly
               />
             </div>
 
@@ -346,30 +431,39 @@ export default function EmployeeTable({
                 placeholder="BE"
               />
             </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">
+                  Resigned Date
+                </label>
+                <InputText
+                  type="date"
+                  value={newEmployee.resigned_date}
+                  onChange={(e) => {
+                    const newDate = e.target.value;
+                    const calculatedPeriod = calculateVacancyPeriod(newDate);
+                    setNewEmployee({ 
+                      ...newEmployee, 
+                      resigned_date: newDate,
+                      vacancy: calculatedPeriod
+                    });
+                  }}
+                  className="w-full"
+                />
+              </div>
+            </div>
+
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-2">
-                Resigned Date
+                Vacancy Period <span className="text-gray-400 text-xs">(Auto-calculated)</span>
               </label>
               <InputText
-                type="date"
-                value={newEmployee.resigned_date}
-                onChange={(e) => setNewEmployee({ ...newEmployee, resigned_date: e.target.value })}
-                className="w-full"
+                value={newEmployee.vacancy}
+                onChange={(e) => setNewEmployee({ ...newEmployee, vacancy: e.target.value })}
+                className="w-full bg-gray-50"
+                placeholder="Will be calculated from resigned date"
+                readOnly
               />
             </div>
-          </div>
-
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-2">
-              Vacancy Period
-            </label>
-            <InputText
-              value={newEmployee.vacancy}
-              onChange={(e) => setNewEmployee({ ...newEmployee, vacancy: e.target.value })}
-              className="w-full"
-              placeholder="0 years, 5 months, 10 days"
-            />
-          </div>
 
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-2">
@@ -496,3 +590,5 @@ export default function EmployeeTable({
     </div>
   );
 }
+
+

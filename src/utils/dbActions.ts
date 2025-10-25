@@ -209,6 +209,15 @@ export async function deleteEmployee(id: number): Promise<void> {
   await sql`delete from employees_flat where id = ${id}`;
 }
 
+export async function checkEmployeeExists(empCode: string): Promise<boolean> {
+  if (!empCode || empCode.trim() === "") return false;
+  await ensureSchema();
+  const result = await sql`
+    select count(*) as count from employees_flat where emp_code = ${empCode.trim()}
+  `;
+  return Number(result[0]?.count || 0) > 0;
+}
+
 // Summary statistics
 export type DivisionSummary = {
   division: string;

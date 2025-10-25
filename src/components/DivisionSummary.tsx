@@ -2,6 +2,8 @@
 
 import { DataTable } from "primereact/datatable";
 import { Column } from "primereact/column";
+import { Button } from "primereact/button";
+import * as XLSX from "xlsx";
 import { EmployeeRow } from "../utils/dbActions";
 
 export default function DivisionSummary({
@@ -15,6 +17,13 @@ export default function DivisionSummary({
   const divisions = [...new Set(data.map(d => d.division))].filter(Boolean);
   const totalEmployees = data.length;
   const totalVacant = data.filter(d => d.vacancy && d.vacancy.trim() !== "").length;
+
+  const exportToExcel = () => {
+    const ws = XLSX.utils.json_to_sheet(data);
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, "Division-wise Data");
+    XLSX.writeFile(wb, `Division-wise-${new Date().toISOString().split('T')[0]}.xlsx`);
+  };
 
   return (
     <div className="space-y-5">
@@ -36,9 +45,18 @@ export default function DivisionSummary({
 
       {/* Division-wise Table - Clean Modern Design */}
       <div className="bg-white border border-gray-200 rounded-lg overflow-hidden">
-        <div className="px-6 py-4 border-b border-gray-200 bg-gray-50">
-          <h2 className="text-lg font-semibold text-gray-900">Division-wise View</h2>
-          <p className="text-sm text-gray-500 mt-1">Employees grouped by division</p>
+        <div className="px-6 py-4 border-b border-gray-200 bg-gray-50 flex justify-between items-center">
+          <div>
+            <h2 className="text-lg font-semibold text-gray-900">Division-wise View</h2>
+            <p className="text-sm text-gray-500 mt-1">Employees grouped by division</p>
+          </div>
+          <Button
+            label="Download Excel"
+            icon="pi pi-download"
+            onClick={exportToExcel}
+            size="small"
+            outlined
+          />
         </div>
         <div className="p-6">
           <DataTable

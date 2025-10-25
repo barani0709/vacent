@@ -1,5 +1,7 @@
 import "../styles/globals.css";
+import "react-toastify/dist/ReactToastify.css";
 import type { Metadata } from "next";
+import { ToastContainer } from "react-toastify";
 
 export const metadata: Metadata = {
   title: "Vacancy Management System",
@@ -15,6 +17,18 @@ export default function RootLayout({
     <html lang="en">
       <body className="min-h-screen bg-gray-50 text-gray-900">
         {children}
+        <ToastContainer
+          position="top-right"
+          autoClose={3000}
+          hideProgressBar={false}
+          newestOnTop
+          closeOnClick
+          rtl={false}
+          pauseOnFocusLoss
+          draggable
+          pauseOnHover
+          theme="light"
+        />
       </body>
     </html>
   );
